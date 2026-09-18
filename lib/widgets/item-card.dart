@@ -13,9 +13,12 @@ class ItemCard extends StatelessWidget {
     this.color = const Color(0xFF602e9e),
     this.onViewDetails,
     // ── Selection mode ─────────────────────────
-    this.quantity,                // null → stepper hidden
+    this.quantity,
     this.onIncrement,
     this.onDecrement,
+    // ── Ellipsis menu ──────────────────────────
+    this.onEdit,
+    this.onDelete,
   });
 
   final String title;
@@ -31,8 +34,11 @@ class ItemCard extends StatelessWidget {
   final VoidCallback? onIncrement;
   final VoidCallback? onDecrement;
 
-  bool get _showStepper => quantity != null;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
+  bool get _showStepper => quantity != null;
+  bool get _showMenu => !_showStepper;
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -50,18 +56,35 @@ class ItemCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Image
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: imageHeight,
-                    child: _buildImage(),
-                  ),
+                // ── Image + ellipsis overlay ───────────
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: imageHeight,
+                        child: _buildImage(),
+                      ),
+                    ),
+
+                    if (_showMenu)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: _MenuButton(
+                          color: color,
+                          onViewDetails: onViewDetails,
+                          onEdit: onEdit,
+                          onDelete: onDelete,
+                        ),
+                      ),
+                  ],
                 ),
+
                 const SizedBox(height: 12),
 
-                // Title
+                // ── Title ──────────────────────────────
                 Text(
                   title,
                   style: const TextStyle(
@@ -74,7 +97,7 @@ class ItemCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
 
-                // Price
+                // ── Price ──────────────────────────────
                 Text(
                   '₱${price.toStringAsFixed(2)}',
                   style: TextStyle(
@@ -86,7 +109,7 @@ class ItemCard extends StatelessWidget {
 
                 const Spacer(),
 
-                // ── Stepper (only in selection mode) ──
+                // ── Stepper (only in selection mode) ───
                 if (_showStepper)
                   Align(
                     alignment: Alignment.centerRight,
@@ -141,6 +164,87 @@ class ItemCard extends StatelessWidget {
   }
 }
 
+class _MenuButton extends StatelessWidget {
+  const _MenuButton({
+    required this.color,
+    this.onViewDetails,
+    this.onEdit,
+    this.onDelete,
+  });
+
+  final Color color;
+  final VoidCallback? onViewDetails;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 24,              
+      height: 24,         
+      child:Material(
+      color: Colors.white.withOpacity(0.9),
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: PopupMenuButton<String>(
+        tooltip: 'Options',
+        icon: Icon(Icons.more_horiz, size: 14, color: color),
+        padding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        onSelected: (value) {
+          switch (value) {
+            case 'view':
+              onViewDetails?.call();
+              break;
+            case 'edit':
+              onEdit?.call();
+              break;
+            case 'delete':
+              onDelete?.call();
+              break;
+          }
+        },
+        itemBuilder: (context) => [
+          if (onViewDetails != null)
+            const PopupMenuItem(
+              value: 'view',
+              child: ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.info_outline, size: 14),
+                title: Text('View Details'),
+              ),
+            ),
+          if (onEdit != null)
+            const PopupMenuItem(
+              value: 'edit',
+              child: ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.edit_outlined, size: 18),
+                title: Text('Edit'),
+              ),
+            ),
+          if (onDelete != null)
+            const PopupMenuItem(
+              value: 'delete',
+              child: ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.delete_outline,
+                    size: 18, color: Colors.red),
+                title: Text('Delete', style: TextStyle(color: Colors.red)),
+              ),
+            ),
+        ],
+      ),
+    ),
+    );
+  }
+}
+
 class _QuantityStepper extends StatelessWidget {
   const _QuantityStepper({
     required this.quantity,
@@ -164,10 +268,7 @@ class _QuantityStepper extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _stepperButton(
-            icon: Icons.remove,
-            onTap: onDecrement,
-          ),
+          _stepperButton(icon: Icons.remove, onTap: onDecrement),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Text(
@@ -179,10 +280,7 @@ class _QuantityStepper extends StatelessWidget {
               ),
             ),
           ),
-          _stepperButton(
-            icon: Icons.add,
-            onTap: onIncrement,
-          ),
+          _stepperButton(icon: Icons.add, onTap: onIncrement),
         ],
       ),
     );

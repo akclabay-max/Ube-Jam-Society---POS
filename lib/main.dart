@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'widgets/store-cover.dart';
 import 'widgets/menu-bar.dart';
 import 'widgets/grid-background.dart';
@@ -9,9 +10,15 @@ import 'screens/receipts.dart';
 import 'screens/scan-add.dart';
 import 'screens/items.dart';
 import 'screens/settings.dart';
-
+import 'database/database.dart';
 void main() {
-  runApp(const MyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  final database = AppDatabase();
+  runApp( 
+    Provider<AppDatabase>.value(
+    value: database,
+    child: const MyApp(),
+  ));
 }
 
 class MyApp extends StatelessWidget {

@@ -7,7 +7,7 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: GridBackground(
         cellSize: 20,
         lineColor: const Color(0x33d1d628),
@@ -29,8 +29,38 @@ class SettingsScreen extends StatelessWidget {
                 spacing: 16,
                 runSpacing: 16,
                 children: [
-                  SettingsCard(title: "Costs", entries: ["table fee","sticker paper","lamination paper"]),
-                  SettingsCard(title: "Items", entries: ["Aster photocard","Enamel pin","Project Hail Mary"])
+                  SettingsCard(
+                    title: 'Costs',
+                    subtitle: 'Production costs',
+                    icon: Icons.wallet_outlined,
+                    entries: const [
+                      'table fee',
+                      'sticker paper',
+                      'lamination paper',
+                    ],
+                    onEdit: (index, value) {
+                      // TODO: open edit dialog
+                    },
+                    onDelete: (index, value) {
+                      // TODO: delete from database
+                    },
+                    onAdd: () {
+                      // TODO: open add dialog
+                    },
+                  ),
+                  SettingsCard(
+                    title: 'Items',
+                    subtitle: 'Available products',
+                    icon: Icons.inventory_2_outlined,
+                    entries: const [
+                      'Aster photocard',
+                      'Enamel pin',
+                      'Project Hail Mary',
+                    ],
+                    onEdit: (index, value) {},
+                    onDelete: (index, value) {},
+                    onAdd: () {},
+                  ),
                 ],
               ),
             ],
