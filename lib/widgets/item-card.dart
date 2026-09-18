@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 class ItemCard extends StatelessWidget {
@@ -7,7 +8,8 @@ class ItemCard extends StatelessWidget {
     required this.price,
     this.imageUrl,
     this.imageAsset,
-    this.imageHeight = 100,
+    this.imagePath,    
+    this.imageHeight = 120,
     this.width = 167,
     this.height = 235,
     this.color = const Color(0xFF602e9e),
@@ -25,6 +27,7 @@ class ItemCard extends StatelessWidget {
   final double price;
   final String? imageUrl;
   final String? imageAsset;
+  final String? imagePath; 
   final double imageHeight;
   final double width;
   final double height;
@@ -129,26 +132,36 @@ class ItemCard extends StatelessWidget {
   }
 
   Widget _buildImage() {
-    if (imageUrl != null) {
-      return Image.network(
-        imageUrl!,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _placeholder(),
-        loadingBuilder: (_, child, progress) {
-          if (progress == null) return child;
-          return _placeholder();
-        },
-      );
-    }
-    if (imageAsset != null) {
-      return Image.asset(
-        imageAsset!,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _placeholder(),
-      );
-    }
-    return _placeholder();
+   if (imagePath != null && imagePath!.isNotEmpty) {
+    final exists = File(imagePath!).existsSync();
+    debugPrint('ItemCard image: $imagePath exists=$exists');
+    return Image.file(
+      File(imagePath!),
+      fit: BoxFit.cover,
+      key: ValueKey(imagePath),
+      errorBuilder: (_, __, ___) => _placeholder(),
+    );
   }
+  if (imageUrl != null) {
+    return Image.network(
+      imageUrl!,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _placeholder(),
+      loadingBuilder: (_, child, progress) {
+        if (progress == null) return child;
+        return _placeholder();
+      },
+    );
+  }
+  if (imageAsset != null) {
+    return Image.asset(
+      imageAsset!,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _placeholder(),
+    );
+  }
+  return _placeholder();
+}
 
   Widget _placeholder() {
     return Container(

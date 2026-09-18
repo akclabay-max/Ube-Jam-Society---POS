@@ -1,12 +1,24 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:drift/drift.dart' hide Column;
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import '../database/database.dart';
+
+Future<String> saveImagePermanently(String originalPath) async {
+  final Directory appDir = await getApplicationDocumentsDirectory();
+  final String fileName =
+      '${DateTime.now().millisecondsSinceEpoch}_${p.basename(originalPath)}';
+  final String newPath = p.join(appDir.path, 'item_pictures', fileName);
+  await Directory(p.dirname(newPath)).create(recursive: true);
+  await File(originalPath).copy(newPath);
+  return newPath;
+}
 
 class ItemFormSheet extends StatefulWidget {
   const ItemFormSheet({super.key, this.item});
-
-  /// If null → adding. Otherwise → editing.
   final Item? item;
 
   @override
@@ -25,6 +37,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
   late final TextEditingController _discount;
 
   bool _saving = false;
+  String? _pickedImagePath;
 
   @override
   void initState() {
@@ -37,6 +50,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     _fandom = TextEditingController(text: item?.fandom ?? '');
     _category = TextEditingController(text: item?.category ?? '');
     _discount = TextEditingController(text: item?.discount.toString() ?? '0');
+    _pickedImagePath = item?.picturePath;
   }
 
   @override
@@ -49,6 +63,42 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     _category.dispose();
     _discount.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+    context: context,                             // ✅ named, required
+    builder: (ctx) => SafeArea(                   // ✅ named, required
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.camera_alt),
+            title: const Text('Take a photo'),
+            onTap: () => Navigator.pop(ctx, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library),
+            title: const Text('Choose from gallery'),
+            onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+          ),
+        ],
+      ),
+    ),
+  );
+
+    if (source == null) return;
+
+    final XFile? image = await picker.pickImage(source: source);
+    debugPrint('pickImage returned: $image');
+    if (image == null) return;
+
+    final String permanentPath = await saveImagePermanently(image.path);
+
+    if (!mounted) return;
+    setState(() => _pickedImagePath = permanentPath);
   }
 
   Future<void> _save() async {
@@ -67,13 +117,11 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
       contributor: Value(
         _contributor.text.trim().isEmpty ? null : _contributor.text.trim(),
       ),
-      fandom: Value(
-        _fandom.text.trim().isEmpty ? null : _fandom.text.trim(),
-      ),
-      category: Value(
-        _category.text.trim().isEmpty ? null : _category.text.trim(),
-      ),
+      fandom: Value(_fandom.text.trim().isEmpty ? null : _fandom.text.trim()),
+      category:
+          Value(_category.text.trim().isEmpty ? null : _category.text.trim()),
       discount: Value(double.tryParse(_discount.text.trim()) ?? 0),
+      picturePath: Value(_pickedImagePath),
     );
 
     if (widget.item == null) {
@@ -90,11 +138,12 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final db = Provider.of<AppDatabase>(context, listen: false);
     final isEditing = widget.item != null;
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
 
     return Padding(
-      padding: EdgeInsets.only(bottom: viewInsets),   // 👈 lift for keyboard
+      padding: EdgeInsets.only(bottom: viewInsets),
       child: Container(
         decoration: const BoxDecoration(
           color: Color(0xFFfffeec),
@@ -110,7 +159,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // ── Drag handle ─────────────────
+                  // Drag handle
                   Center(
                     child: Container(
                       width: 40,
@@ -123,7 +172,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                     ),
                   ),
 
-                  // ── Header ──────────────────────
+                  // Header
                   Row(
                     children: [
                       Expanded(
@@ -144,7 +193,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                   ),
                   const SizedBox(height: 12),
 
-                  // ── Fields ──────────────────────
+                  // Fields
                   _field(_name, 'Name', required: true),
                   const SizedBox(height: 12),
 
@@ -198,22 +247,73 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                   ),
                   const SizedBox(height: 12),
 
-                  _field(_contributor, 'Contributor'),
+                  _SettingsDropdown(
+                    db: db,
+                    listType: 'contributor',
+                    label: 'Contributor',
+                    value: _contributor.text.isEmpty ? null : _contributor.text,
+                    onChanged: (v) =>
+                        setState(() => _contributor.text = v ?? ''),
+                  ),
                   const SizedBox(height: 12),
-                  _field(_fandom, 'Fandom'),
+                  _SettingsDropdown(
+                    db: db,
+                    listType: 'fandom',
+                    label: 'Fandom',
+                    value: _fandom.text.isEmpty ? null : _fandom.text,
+                    onChanged: (v) => setState(() => _fandom.text = v ?? ''),
+                  ),
                   const SizedBox(height: 12),
-                  _field(_category, 'Category'),
+                  _SettingsDropdown(
+                    db: db,
+                    listType: 'category',
+                    label: 'Category',
+                    value: _category.text.isEmpty ? null : _category.text,
+                    onChanged: (v) => setState(() => _category.text = v ?? ''),
+                  ),
                   const SizedBox(height: 12),
 
+                  // Picture
                   OutlinedButton.icon(
-                    onPressed: () {
-                      // TODO: image_picker
-                    },
+                    onPressed: _pickImage,
                     icon: const Icon(Icons.image_outlined),
-                    label: const Text('Add Picture (optional)'),
+                    label: Text(
+                      _pickedImagePath == null
+                          ? 'Add Picture (optional)'
+                          : 'Change Picture',
+                    ),
                   ),
+
+                  if (_pickedImagePath != null) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(_pickedImagePath!),
+                        height: 120,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          height: 120,
+                          color: Colors.grey.shade200,
+                          child: const Icon(Icons.broken_image,
+                              color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          setState(() => _pickedImagePath = null),
+                      child: const Text(
+                        'Remove Picture',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 20),
 
+                  // Save
                   FilledButton(
                     onPressed: _saving ? null : _save,
                     style: FilledButton.styleFrom(
@@ -271,6 +371,60 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
           (required
               ? (v) => (v == null || v.trim().isEmpty) ? 'Required' : null
               : null),
+    );
+  }
+}
+
+class _SettingsDropdown extends StatelessWidget {
+  const _SettingsDropdown({
+    required this.db,
+    required this.listType,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final AppDatabase db;
+  final String listType;
+  final String label;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<SettingsEntry>>(
+      stream: db.watchEntriesFor(listType),
+      builder: (context, snapshot) {
+        final entries = snapshot.data ?? [];
+        final values = entries.map((e) => e.value).toList();
+
+        final options =
+            (value != null && value!.isNotEmpty && !values.contains(value))
+                ? [value!, ...values]
+                : values;
+
+        return DropdownButtonFormField<String>(
+          value: (value?.isEmpty ?? true) ? null : value,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: label,
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          items: [
+            const DropdownMenuItem<String>(
+              value: null,
+              child: Text('— none —'),
+            ),
+            for (final v in options)
+              DropdownMenuItem<String>(value: v, child: Text(v)),
+          ],
+          onChanged: onChanged,
+        );
+      },
     );
   }
 }

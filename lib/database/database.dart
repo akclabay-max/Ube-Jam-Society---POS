@@ -1,4 +1,3 @@
-// lib/database/database.dart
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
@@ -45,6 +44,9 @@ class AppDatabase extends _$AppDatabase {
       (delete(items)..where((t) => t.id.equals(id))).go();
 
   // ── Settings ──────────────────────────────────
+  Stream<List<SettingsEntry>> watchAllEntries() =>
+      select(settingsEntries).watch();
+
   Stream<List<SettingsEntry>> watchEntriesFor(String listType) {
     return (select(settingsEntries)
           ..where((t) => t.listType.equals(listType))

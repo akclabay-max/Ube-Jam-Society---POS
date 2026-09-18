@@ -5,6 +5,7 @@ import '/widgets/item-card.dart';
 import '/database/database.dart';
 import '/models/item-extensions.dart';
 import '/widgets/item-form.dart';
+import '/widgets/item-details.dart';
 
 class ItemsScreen extends StatefulWidget {
   const ItemsScreen({super.key});
@@ -20,10 +21,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
   final FocusNode _filterFocus = FocusNode();
 
   // ── Filter suggestions ──────────────────────────
-  static const List<String> _keywords = [
-    'Sticker', 'Pin', 'Project Hail Mary', 'Love and Deepspace',
-    'Aster', 'Miisomaru', 'Stickersheet', 'Magnet', 'Bookmark',
-  ];
+  
 
   final List<String> _activeFilters = [];
 
@@ -107,6 +105,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
   @override
   Widget build(BuildContext context) {
     final db = Provider.of<AppDatabase>(context);
+    
 
     return Scaffold(
       body: GridBackground(
@@ -179,84 +178,87 @@ class _ItemsScreenState extends State<ItemsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                StreamBuilder<List<SettingsEntry>>(
+                  stream: db.watchAllEntries(),
+                  builder: (context, snapshot) {
+                    final keywords = snapshot.data?.map((e) => e.value).toList() ?? const [];
 
-                  RawAutocomplete<String>(
-                    textEditingController: _filterController,
-                    focusNode: _filterFocus,
-                    optionsBuilder: (value) {
-                      final q = value.text.trim().toLowerCase();
-                      if (q.isEmpty) return const Iterable<String>.empty();
-                      return _keywords.where((k) => k.toLowerCase().contains(q));
-                    },
-                    fieldViewBuilder: (context, controller, focusNode, _) {
-                      return _ShadowedField(
-                        child: TextField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          decoration: InputDecoration(
-                            hintText: 'Filter by keyword...',
-                            prefixIcon: const Icon(Icons.filter_alt_outlined),
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 0),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
+                    return RawAutocomplete<String>(
+                      textEditingController: _filterController,
+                      focusNode: _filterFocus,
+                      optionsBuilder: (value) {
+                        final q = value.text.trim().toLowerCase();
+                        if (q.isEmpty) return const Iterable<String>.empty();
+                        return keywords.where((k) => k.toLowerCase().contains(q));
+                      },
+                      fieldViewBuilder: (context, controller, focusNode, _) {
+                        return _ShadowedField(
+                          child: TextField(
+                            controller: controller,
+                            focusNode: focusNode,
+                            decoration: InputDecoration(
+                              hintText: 'Filter by keyword...',
+                              prefixIcon: const Icon(Icons.filter_alt_outlined),
+                              filled: true,
+                              fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 0),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                            onSubmitted: (text) {
+                              final match = keywords.firstWhere(
+                                (k) => k.toLowerCase() == text.trim().toLowerCase(),
+                                orElse: () => text.trim(),
+                              );
+                              if (match.isNotEmpty && !_activeFilters.contains(match)) {
+                                setState(() => _activeFilters.add(match));
+                              }
+                              controller.clear();
+                              focusNode.unfocus();
+                            },
+                          ),
+                        );
+                      },
+                      optionsViewBuilder: (context, onSelected, options) {
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            color: Colors.white,
+                            elevation: 4,
+                            borderRadius: BorderRadius.circular(12),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 220),
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                padding: EdgeInsets.zero,
+                                itemCount: options.length,
+                                itemBuilder: (context, index) {
+                                  final option = options.elementAt(index);
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.tag, size: 18),
+                                    title: Text(option),
+                                    onTap: () => onSelected(option),
+                                  );
+                                },
+                              ),
                             ),
                           ),
-                          onSubmitted: (text) {
-                            final match = _keywords.firstWhere(
-                              (k) =>
-                                  k.toLowerCase() == text.trim().toLowerCase(),
-                              orElse: () => text.trim(),
-                            );
-                            if (match.isNotEmpty &&
-                                !_activeFilters.contains(match)) {
-                              setState(() => _activeFilters.add(match));
-                            }
-                            controller.clear();
-                            focusNode.unfocus();
-                          },
-                        ),
-                      );
-                    },
-                    optionsViewBuilder: (context, onSelected, options) {
-                      return Align(
-                        alignment: Alignment.topLeft,
-                        child: Material(
-                          color: Colors.white,
-                          elevation: 4,
-                          borderRadius: BorderRadius.circular(12),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 220),
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              padding: EdgeInsets.zero,
-                              itemCount: options.length,
-                              itemBuilder: (context, index) {
-                                final option = options.elementAt(index);
-                                return ListTile(
-                                  dense: true,
-                                  leading: const Icon(Icons.tag, size: 18),
-                                  title: Text(option),
-                                  onTap: () => onSelected(option),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                    onSelected: (value) {
-                      if (!_activeFilters.contains(value)) {
-                        setState(() => _activeFilters.add(value));
-                      }
-                      _filterController.clear();
-                      _filterFocus.unfocus();
-                    },
-                  ),
-
+                        );
+                      },
+                      onSelected: (value) {
+                        if (!_activeFilters.contains(value)) {
+                          setState(() => _activeFilters.add(value));
+                        }
+                        _filterController.clear();
+                        _filterFocus.unfocus();
+                      },
+                    );
+                  },
+                ),
                   if (_activeFilters.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Wrap(
@@ -303,6 +305,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
                           ItemCard(
                             title: item.name,
                             price: item.finalPrice,
+                            imagePath: item.picturePath,        
                             quantity: _isSelectionMode
                                 ? (_cart[item.id] ?? 0)
                                 : null,
@@ -381,7 +384,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
   }
 
   void _viewItem(Item item) {
-    // TODO: show details
+    showItemDetails(context, item);
   }
 
   Future<void> _confirmDelete(Item item) async {
