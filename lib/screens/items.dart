@@ -103,7 +103,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
         cellSize: 20,
         lineColor: const Color(0x33d1d628),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 140), // 👈 bottom space for the bar
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 140), 
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
