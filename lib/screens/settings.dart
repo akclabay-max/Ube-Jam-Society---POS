@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:drift/drift.dart' hide Column;
 import '../widgets/grid-background.dart';
 import '../widgets/settings-card.dart';
 import '../database/database.dart';
@@ -56,6 +57,7 @@ class SettingsScreen extends StatelessWidget {
                     icon: Icons.category_outlined,
                     color: const Color(0xFF1B8E3D),
                   ),
+                  _BulkDealsList(db: db),
                 ],
               ),
             ],
@@ -144,6 +146,142 @@ class _SettingsList extends StatelessWidget {
       },
     );
   }
+}
+
+class _BulkDealsList extends StatelessWidget {
+  const _BulkDealsList({required this.db});
+
+  final AppDatabase db;
+
+  Future<void> _edit(BuildContext context, {BulkDeal? deal}) async {
+    final values = await _promptForDeal(context, deal: deal);
+    if (values == null) return;
+
+    final entry = BulkDealsCompanion(
+      id: deal == null ? const Value.absent() : Value(deal.id),
+      name: Value(values.name),
+      qty: Value(values.qty),
+      price: Value(values.price),
+    );
+    if (deal == null) {
+      await db.addBulkDeal(entry);
+    } else {
+      await db.updateBulkDeal(entry, deal.id);
+    }
+  }
+
+  Future<void> _delete(BuildContext context, BulkDeal deal) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete bulk deal?'),
+        content: Text('Items using "${deal.name}" will become regular items.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await db.deleteBulkDeal(deal.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<BulkDeal>>(
+      stream: db.watchAllBulkDeals(),
+      builder: (context, snapshot) {
+        final deals = snapshot.data ?? [];
+        return SettingsCard(
+          title: 'Bulk Deals',
+          subtitle: 'Mix-and-match bundle groups',
+          icon: Icons.local_offer_outlined,
+          color: const Color(0xFFE67E22),
+          entries: deals
+              .map(
+                (deal) =>
+                    '${deal.name}: ${deal.qty} for ₱${deal.price.toStringAsFixed(2)}',
+              )
+              .toList(),
+          onAdd: () => _edit(context),
+          onEdit: (index, _) => _edit(context, deal: deals[index]),
+          onDelete: (index, _) => _delete(context, deals[index]),
+        );
+      },
+    );
+  }
+}
+
+class _BulkDealValues {
+  const _BulkDealValues(this.name, this.qty, this.price);
+  final String name;
+  final int qty;
+  final double price;
+}
+
+Future<_BulkDealValues?> _promptForDeal(
+  BuildContext context, {
+  BulkDeal? deal,
+}) {
+  final name = TextEditingController(text: deal?.name ?? '');
+  final qty = TextEditingController(text: deal?.qty.toString() ?? '');
+  final price = TextEditingController(text: deal?.price.toString() ?? '');
+
+  return showDialog<_BulkDealValues>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(deal == null ? 'Add bulk deal' : 'Edit bulk deal'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: name,
+            decoration: const InputDecoration(labelText: 'Deal name'),
+          ),
+          TextField(
+            controller: qty,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Quantity in bundle'),
+          ),
+          TextField(
+            controller: price,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Bundle price (₱)'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            final parsedQty = int.tryParse(qty.text.trim());
+            final parsedPrice = double.tryParse(price.text.trim());
+            if (name.text.trim().isEmpty ||
+                parsedQty == null ||
+                parsedQty < 2 ||
+                parsedPrice == null ||
+                parsedPrice < 0) {
+              return;
+            }
+            Navigator.pop(
+              context,
+              _BulkDealValues(name.text.trim(), parsedQty, parsedPrice),
+            );
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Simple text-input dialog used for add + edit.

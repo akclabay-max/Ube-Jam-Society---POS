@@ -5,11 +5,13 @@ class ReceiptItem {
     required this.name,
     required this.qty,
     required this.price,
+    this.bulkDeal,
   });
 
   final String name;
   final int qty;
   final double price;
+  final String? bulkDeal;
 
   double get lineTotal => qty * price;
 }
@@ -21,6 +23,7 @@ class ReceiptCard extends StatefulWidget {
     required this.total,
     required this.itemCount,
     required this.date,
+    required this.paymentMethod,
     this.items = const [],
     this.color = const Color(0xFF602e9e),
     this.width = 350,
@@ -31,6 +34,7 @@ class ReceiptCard extends StatefulWidget {
   final double total;
   final int itemCount;
   final DateTime date;
+  final String paymentMethod;
   final List<ReceiptItem> items;
   final Color color;
   final double width;
@@ -85,6 +89,11 @@ class _ReceiptCardState extends State<ReceiptCard> {
               const SizedBox(height: 4),
               Text(
                 _formatDate(widget.date),
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Payment: ${widget.paymentMethod}',
                 style: const TextStyle(fontSize: 12, color: Colors.black54),
               ),
 
@@ -169,7 +178,7 @@ class _ReceiptCardState extends State<ReceiptCard> {
               const Expanded(
                 flex: 4,
                 child: Text(
-                  'Item',
+                  'Particular',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -181,6 +190,18 @@ class _ReceiptCardState extends State<ReceiptCard> {
                 flex: 1,
                 child: Text(
                   'Qty',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black54,
+                  ),
+                ),
+              ),
+              const Expanded(
+                flex: 3,
+                child: Text(
+                  'Deal',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 11,
@@ -242,6 +263,17 @@ class _ReceiptCardState extends State<ReceiptCard> {
                       ),
                     ),
                     Expanded(
+                      flex: 3,
+                      child: Text(
+                        item.bulkDeal ?? '—',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ),
+                    Expanded(
                       flex: 2,
                       child: Text(
                         '₱${item.lineTotal.toStringAsFixed(2)}',
@@ -295,5 +327,6 @@ class _ReceiptCardState extends State<ReceiptCard> {
   }
 
   String _formatDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} '
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }

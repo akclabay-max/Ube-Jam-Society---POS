@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 class ItemCard extends StatelessWidget {
@@ -8,10 +9,12 @@ class ItemCard extends StatelessWidget {
     required this.price,
     this.imageUrl,
     this.imageAsset,
-    this.imagePath,    
+    this.imagePath,
+    this.bulkDealLabel,
+    this.savings,
     this.imageHeight = 120,
     this.width = 167,
-    this.height = 235,
+    this.height = 260,
     this.color = const Color(0xFF602e9e),
     this.onViewDetails,
     // ── Selection mode ─────────────────────────
@@ -27,7 +30,7 @@ class ItemCard extends StatelessWidget {
   final double price;
   final String? imageUrl;
   final String? imageAsset;
-  final String? imagePath; 
+  final String? imagePath;
   final double imageHeight;
   final double width;
   final double height;
@@ -36,7 +39,8 @@ class ItemCard extends StatelessWidget {
   final int? quantity;
   final VoidCallback? onIncrement;
   final VoidCallback? onDecrement;
-
+  final String? bulkDealLabel;
+  final double? savings;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
@@ -112,6 +116,30 @@ class ItemCard extends StatelessWidget {
 
                 const Spacer(),
 
+                // 👇 bulk badge
+                if (bulkDealLabel != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1B8E3D).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        bulkDealLabel!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1B8E3D),
+                        ),
+                      ),
+                    ),
+                  ),
+
                 // ── Stepper (only in selection mode) ───
                 if (_showStepper)
                   Align(
@@ -132,36 +160,36 @@ class ItemCard extends StatelessWidget {
   }
 
   Widget _buildImage() {
-   if (imagePath != null && imagePath!.isNotEmpty) {
-    final exists = File(imagePath!).existsSync();
-    debugPrint('ItemCard image: $imagePath exists=$exists');
-    return Image.file(
-      File(imagePath!),
-      fit: BoxFit.cover,
-      key: ValueKey(imagePath),
-      errorBuilder: (_, __, ___) => _placeholder(),
-    );
+    if (imagePath != null && imagePath!.isNotEmpty) {
+      final exists = File(imagePath!).existsSync();
+      debugPrint('ItemCard image: $imagePath exists=$exists');
+      return Image.file(
+        File(imagePath!),
+        fit: BoxFit.cover,
+        key: ValueKey(imagePath),
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    }
+    if (imageUrl != null) {
+      return Image.network(
+        imageUrl!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _placeholder(),
+        loadingBuilder: (_, child, progress) {
+          if (progress == null) return child;
+          return _placeholder();
+        },
+      );
+    }
+    if (imageAsset != null) {
+      return Image.asset(
+        imageAsset!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    }
+    return _placeholder();
   }
-  if (imageUrl != null) {
-    return Image.network(
-      imageUrl!,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => _placeholder(),
-      loadingBuilder: (_, child, progress) {
-        if (progress == null) return child;
-        return _placeholder();
-      },
-    );
-  }
-  if (imageAsset != null) {
-    return Image.asset(
-      imageAsset!,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => _placeholder(),
-    );
-  }
-  return _placeholder();
-}
 
   Widget _placeholder() {
     return Container(
@@ -193,67 +221,70 @@ class _MenuButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 24,              
-      height: 24,         
-      child:Material(
-      color: Colors.white.withOpacity(0.9),
-      shape: const CircleBorder(),
-      elevation: 2,
-      child: PopupMenuButton<String>(
-        tooltip: 'Options',
-        icon: Icon(Icons.more_horiz, size: 14, color: color),
-        padding: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+      width: 24,
+      height: 24,
+      child: Material(
+        color: Colors.white.withOpacity(0.9),
+        shape: const CircleBorder(),
+        elevation: 2,
+        child: PopupMenuButton<String>(
+          tooltip: 'Options',
+          icon: Icon(Icons.more_horiz, size: 14, color: color),
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          onSelected: (value) {
+            switch (value) {
+              case 'view':
+                onViewDetails?.call();
+                break;
+              case 'edit':
+                onEdit?.call();
+                break;
+              case 'delete':
+                onDelete?.call();
+                break;
+            }
+          },
+          itemBuilder: (context) => [
+            if (onViewDetails != null)
+              const PopupMenuItem(
+                value: 'view',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.info_outline, size: 14),
+                  title: Text('View Details'),
+                ),
+              ),
+            if (onEdit != null)
+              const PopupMenuItem(
+                value: 'edit',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.edit_outlined, size: 18),
+                  title: Text('Edit'),
+                ),
+              ),
+            if (onDelete != null)
+              const PopupMenuItem(
+                value: 'delete',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.delete_outline,
+                    size: 18,
+                    color: Colors.red,
+                  ),
+                  title: Text('Delete', style: TextStyle(color: Colors.red)),
+                ),
+              ),
+          ],
         ),
-        onSelected: (value) {
-          switch (value) {
-            case 'view':
-              onViewDetails?.call();
-              break;
-            case 'edit':
-              onEdit?.call();
-              break;
-            case 'delete':
-              onDelete?.call();
-              break;
-          }
-        },
-        itemBuilder: (context) => [
-          if (onViewDetails != null)
-            const PopupMenuItem(
-              value: 'view',
-              child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.info_outline, size: 14),
-                title: Text('View Details'),
-              ),
-            ),
-          if (onEdit != null)
-            const PopupMenuItem(
-              value: 'edit',
-              child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.edit_outlined, size: 18),
-                title: Text('Edit'),
-              ),
-            ),
-          if (onDelete != null)
-            const PopupMenuItem(
-              value: 'delete',
-              child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.delete_outline,
-                    size: 18, color: Colors.red),
-                title: Text('Delete', style: TextStyle(color: Colors.red)),
-              ),
-            ),
-        ],
       ),
-    ),
     );
   }
 }

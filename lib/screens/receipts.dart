@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+
+import 'dart:convert';
+
+import 'package:provider/provider.dart';
+
+import '/database/database.dart';
 import '/widgets/receipt-card.dart';
 import '/widgets/grid-background.dart';
 
@@ -7,75 +13,73 @@ class ReceiptsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final today = DateTime.now();
+    final db = Provider.of<AppDatabase>(context);
 
     return Scaffold(
       body: GridBackground(
         cellSize: 20,
         lineColor: const Color(0x33d1d628),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Receipts',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF602e9e),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 16,
-                runSpacing: 16,
+        child: StreamBuilder<List<Receipt>>(
+          stream: db.watchAllReceipts(),
+          builder: (context, snapshot) {
+            final receipts = snapshot.data ?? [];
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ReceiptCard(
-                    receiptNumber: 'UJSR-003',
-                    total: 50.99,
-                    itemCount: 3,
-                    date: DateTime.now(),
-                    items:  [
-                      ReceiptItem(name: 'Amaze Amaze Amaze', qty: 1, price: 30.99),
-                      ReceiptItem(name: 'Koaruhana Pin', qty: 2, price: 20.00),
-                    ],
-                    onView: () {
-                      // optional: navigate to full receipt page
-                    },
+                  const Text(
+                    'Receipts',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF602e9e),
+                    ),
                   ),
-                  ReceiptCard(
-                    receiptNumber: 'UJSR-002',
-                    total: 49.99,
-                    itemCount: 3,
-                    date: DateTime.now(),
-                    items:  [
-                      ReceiptItem(name: 'Fist My Bump', qty: 1, price: 29.99),
-                      ReceiptItem(name: 'Words of Encouragement', qty: 2, price: 10.00),
-                    ],
-                    onView: () {
-                      // optional: navigate to full receipt page
-                    },
-                  ),
-                  ReceiptCard(
-                    receiptNumber: 'UJSR-001',
-                    total: 49.99,
-                    itemCount: 3,
-                    date: DateTime.now(),
-                    items:  [
-                      ReceiptItem(name: 'Meow Mao Mao', qty: 1, price: 29.99),
-                      ReceiptItem(name: 'Frog Jinshi', qty: 2, price: 10.00),
-                    ],
-                    onView: () {
-                      // optional: navigate to full receipt page
-                    },
-                  ),
+                  const SizedBox(height: 16),
+                  if (receipts.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Text('No receipts yet.'),
+                    )
+                  else
+                    Wrap(
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: [
+                        for (final receipt in receipts)
+                          ReceiptCard(
+                            receiptNumber: receipt.receiptNumber,
+                            total: receipt.total,
+                            itemCount: _itemCount(receipt.itemsJson),
+                            date: receipt.createdAt,
+                            paymentMethod: receipt.paymentMethod,
+                            items: _items(receipt.itemsJson),
+                          ),
+                      ],
+                    ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
   }
+
+  List<ReceiptItem> _items(String json) {
+    final values = jsonDecode(json) as List<dynamic>;
+    return values.map((value) {
+      final item = value as Map<String, dynamic>;
+      return ReceiptItem(
+        name: item['name'] as String,
+        qty: item['qty'] as int,
+        price: (item['price'] as num).toDouble(),
+        bulkDeal: item['bulkDeal'] as String?,
+      );
+    }).toList();
+  }
+
+  int _itemCount(String json) =>
+      _items(json).fold(0, (total, item) => total + item.qty);
 }

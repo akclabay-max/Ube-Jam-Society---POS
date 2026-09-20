@@ -1,5 +1,14 @@
 import 'package:flutter/material.dart';
+
+import 'dart:convert';
+
+import 'package:drift/drift.dart' hide Column;
 import 'package:provider/provider.dart';
+import 'package:excel/excel.dart';
+import 'package:file_picker/file_picker.dart';
+
+import 'dart:async';
+
 import '/widgets/grid-background.dart';
 import '/widgets/item-card.dart';
 import '/database/database.dart';
@@ -19,29 +28,33 @@ class _ItemsScreenState extends State<ItemsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _filterController = TextEditingController();
   final FocusNode _filterFocus = FocusNode();
+  Timer? _searchDebounce;
 
   // ── Filter suggestions ──────────────────────────
-  
 
   final List<String> _activeFilters = [];
 
   // ── Selection mode ──────────────────────────────
   bool _isSelectionMode = false;
-  final Map<int, int> _cart = {};       // item id → quantity
-  List<Item> _currentItems = [];        // latest DB snapshot
+  final Map<int, int> _cart = {}; // item id → quantity
+  List<Item> _currentItems = []; // latest DB snapshot
+  List<BulkDeal> _bulkDeals = [];
 
   // ── Computed values ─────────────────────────────
-  double get _total {
-    double sum = 0;
-    _cart.forEach((id, qty) {
-      final matches = _currentItems.where((i) => i.id == id);
-      if (matches.isEmpty) return;
-      sum += matches.first.finalPrice * qty;
-    });
-    return sum;
-  }
+  double get _total => totalForCart(_currentItems, _bulkDeals, _cart);
 
   int get _totalItems => _cart.values.fold(0, (a, b) => a + b);
+
+  double get _savings => savingsForCart(_currentItems, _bulkDeals, _cart);
+
+  String? _dealLabelFor(Item item) {
+    for (final deal in _bulkDeals) {
+      if (deal.id == item.bulkDealId) {
+        return '${deal.qty} for ₱${deal.price.toStringAsFixed(0)}';
+      }
+    }
+    return null;
+  }
 
   // ── Selection mode actions ──────────────────────
   void _enterSelection() => setState(() => _isSelectionMode = true);
@@ -54,7 +67,30 @@ class _ItemsScreenState extends State<ItemsScreen> {
   }
 
   void _increment(int id) {
-    setState(() => _cart[id] = (_cart[id] ?? 0) + 1);
+    final item = _currentItems.where((i) => i.id == id).firstOrNull;
+    if (item == null) return;
+
+    final currentQty = _cart[id] ?? 0;
+    if (currentQty >= item.stock) {
+      // Already at max — show a brief message
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Only ${item.stock} in stock'),
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFF602e9e),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      return;
+    }
+
+    setState(() => _cart[id] = currentQty + 1);
   }
 
   void _decrement(int id) {
@@ -68,18 +104,228 @@ class _ItemsScreenState extends State<ItemsScreen> {
     });
   }
 
+  Future<void> _checkout() async {
+    final selected = _cart.entries
+        .map((entry) {
+          final item = _currentItems.where((item) => item.id == entry.key);
+          return item.isEmpty ? null : MapEntry(item.first, entry.value);
+        })
+        .whereType<MapEntry<Item, int>>()
+        .toList();
+    if (selected.isEmpty) return;
+
+    var paymentMethod = 'Cash';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Confirm checkout'),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final entry in selected)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text(entry.key.name)),
+                          Text('x${entry.value}'),
+                          const SizedBox(width: 12),
+                          Text(
+                            '₱${(entry.key.finalPrice * entry.value).toStringAsFixed(2)}',
+                          ),
+                        ],
+                      ),
+                    ),
+                  const Divider(),
+                  for (final deal in _bulkDeals.where(
+                    (deal) => selected.any(
+                      (entry) => entry.key.bulkDealId == deal.id,
+                    ),
+                  ))
+                    Text(
+                      '${deal.name}: ${deal.qty} for ₱${deal.price.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Total: ₱${_total.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: paymentMethod,
+                    decoration: const InputDecoration(
+                      labelText: 'Payment method',
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'Online', child: Text('Online')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => paymentMethod = value);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Confirm payment'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final now = DateTime.now();
+    final receiptNumber = 'UJSR-${now.millisecondsSinceEpoch}';
+    final checkoutTotal = _total;
+    final receiptItems = selected
+        .map(
+          (entry) => {
+            'name': entry.key.name,
+            'qty': entry.value,
+            'price': entry.key.finalPrice,
+            'bulkDeal': _dealLabelFor(entry.key),
+            'contributor': entry.key.contributor,
+          },
+        )
+        .toList();
+    final db = Provider.of<AppDatabase>(context, listen: false);
+    try {
+      await db.completeCheckout(
+        receipt: ReceiptsCompanion.insert(
+          receiptNumber: receiptNumber,
+          createdAt: now,
+          paymentMethod: paymentMethod,
+          total: checkoutTotal,
+          itemsJson: jsonEncode(receiptItems),
+        ),
+        earning: EarningsCompanion.insert(
+          startDate: now,
+          endDate: now,
+          amount: checkoutTotal,
+          source: const Value('Checkout'),
+          receiptId: Value(receiptNumber),
+        ),
+        quantities: {for (final entry in selected) entry.key.id: entry.value},
+      );
+    } on StateError catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
+      return;
+    }
+    _exitSelection();
+  }
+
+  Future<void> _importItems() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx', 'xls'],
+      withData: true,
+    );
+    if (result == null || result.files.single.bytes == null) return;
+
+    final workbook = Excel.decodeBytes(result.files.single.bytes!);
+    final sheet = workbook.tables.values.firstOrNull;
+    if (sheet == null || sheet.rows.isEmpty) return;
+
+    String cellValue(List<Data?> row, int index) =>
+        index < row.length ? row[index]?.value?.toString().trim() ?? '' : '';
+    final headers = sheet.rows.first
+        .map((cell) => cell?.value?.toString().trim().toLowerCase() ?? '')
+        .toList();
+    int column(String name) => headers.indexOf(name);
+    final nameColumn = column('name');
+    final priceColumn = column('price');
+    if (nameColumn < 0 || priceColumn < 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Excel must include name and price columns.'),
+        ),
+      );
+      return;
+    }
+
+    final db = Provider.of<AppDatabase>(context, listen: false);
+    var imported = 0;
+    for (final row in sheet.rows.skip(1)) {
+      final name = cellValue(row, nameColumn);
+      final price = double.tryParse(cellValue(row, priceColumn));
+      if (name.isEmpty || price == null) continue;
+
+      int? optionalInt(String header) {
+        final index = column(header);
+        return index < 0 ? null : int.tryParse(cellValue(row, index));
+      }
+
+      double? optionalDouble(String header) {
+        final index = column(header);
+        return index < 0 ? null : double.tryParse(cellValue(row, index));
+      }
+
+      String? optionalText(String header) {
+        final index = column(header);
+        final value = index < 0 ? '' : cellValue(row, index);
+        return value.isEmpty ? null : value;
+      }
+
+      await db.addItem(
+        ItemsCompanion.insert(
+          name: name,
+          price: price,
+          stock: Value(optionalInt('stock') ?? 0),
+          contributor: Value(optionalText('contributor')),
+          fandom: Value(optionalText('fandom')),
+          category: Value(optionalText('category')),
+          discount: Value(optionalDouble('discount') ?? 0),
+          bulkDealId: Value(optionalInt('bulkdealid')),
+        ),
+      );
+      imported++;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('$imported item(s) imported.')));
+  }
+
   // ── Filtering ───────────────────────────────────
   List<Item> _applyFilters(List<Item> allItems) {
     final query = _searchController.text.trim().toLowerCase();
 
     return allItems.where((item) {
-      final matchesSearch = query.isEmpty ||
+      final matchesSearch =
+          query.isEmpty ||
           item.name.toLowerCase().contains(query) ||
           (item.contributor?.toLowerCase().contains(query) ?? false) ||
           (item.fandom?.toLowerCase().contains(query) ?? false) ||
           (item.category?.toLowerCase().contains(query) ?? false);
 
-      final matchesFilters = _activeFilters.isEmpty ||
+      final matchesFilters =
+          _activeFilters.isEmpty ||
           _activeFilters.any((f) {
             final lower = f.toLowerCase();
             return item.name.toLowerCase().contains(lower) ||
@@ -95,234 +341,286 @@ class _ItemsScreenState extends State<ItemsScreen> {
   // ── Lifecycle ───────────────────────────────────
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _filterController.dispose();
     _filterFocus.dispose();
     super.dispose();
   }
 
-    // ── Build ───────────────────────────────────────
+  // ── Build ───────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final db = Provider.of<AppDatabase>(context);
-    
 
     return Scaffold(
       body: GridBackground(
         cellSize: 20,
         lineColor: const Color(0x33d1d628),
-        child: StreamBuilder<List<Item>>(
-          stream: db.watchAllItems(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
+        child: StreamBuilder<List<BulkDeal>>(
+          stream: db.watchAllBulkDeals(),
+          builder: (context, dealSnapshot) {
+            _bulkDeals = dealSnapshot.data ?? [];
+            return StreamBuilder<List<Item>>(
+              stream: db.watchAllItems(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-            if (snapshot.hasError) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'Failed to load items:\n${snapshot.error}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ),
-              );
-            }
-
-            final allItems = snapshot.data ?? [];
-            _currentItems = allItems;
-            final items = _applyFilters(allItems);
-
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 140),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Items',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF602e9e),
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(
+                        'Failed to load items:\n${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.red),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                  );
+                }
 
-                  _ShadowedField(
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search items...',
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: _searchController.text.isEmpty
-                            ? null
-                            : IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() {});
-                                },
-                              ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 0),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                final allItems = snapshot.data ?? [];
+                _currentItems = allItems;
+                final items = _applyFilters(allItems);
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 140),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Items',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF602e9e),
                         ),
                       ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                StreamBuilder<List<SettingsEntry>>(
-                  stream: db.watchAllEntries(),
-                  builder: (context, snapshot) {
-                    final keywords = snapshot.data?.map((e) => e.value).toList() ?? const [];
+                      const SizedBox(height: 16),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          onPressed: _importItems,
+                          icon: const Icon(Icons.upload_file),
+                          label: const Text('Import Excel'),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
 
-                    return RawAutocomplete<String>(
-                      textEditingController: _filterController,
-                      focusNode: _filterFocus,
-                      optionsBuilder: (value) {
-                        final q = value.text.trim().toLowerCase();
-                        if (q.isEmpty) return const Iterable<String>.empty();
-                        return keywords.where((k) => k.toLowerCase().contains(q));
-                      },
-                      fieldViewBuilder: (context, controller, focusNode, _) {
-                        return _ShadowedField(
-                          child: TextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            decoration: InputDecoration(
-                              hintText: 'Filter by keyword...',
-                              prefixIcon: const Icon(Icons.filter_alt_outlined),
-                              filled: true,
-                              fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 0),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
+                      _ShadowedField(
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Search items...',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _searchController.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {});
+                                    },
+                                  ),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 0,
                             ),
-                            onSubmitted: (text) {
-                              final match = keywords.firstWhere(
-                                (k) => k.toLowerCase() == text.trim().toLowerCase(),
-                                orElse: () => text.trim(),
-                              );
-                              if (match.isNotEmpty && !_activeFilters.contains(match)) {
-                                setState(() => _activeFilters.add(match));
-                              }
-                              controller.clear();
-                              focusNode.unfocus();
-                            },
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
                           ),
-                        );
-                      },
-                      optionsViewBuilder: (context, onSelected, options) {
-                        return Align(
-                          alignment: Alignment.topLeft,
-                          child: Material(
-                            color: Colors.white,
-                            elevation: 4,
-                            borderRadius: BorderRadius.circular(12),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxHeight: 220),
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                padding: EdgeInsets.zero,
-                                itemCount: options.length,
-                                itemBuilder: (context, index) {
-                                  final option = options.elementAt(index);
-                                  return ListTile(
-                                    dense: true,
-                                    leading: const Icon(Icons.tag, size: 18),
-                                    title: Text(option),
-                                    onTap: () => onSelected(option),
+                          onChanged: (value) {
+                            // Cancel any pending search
+                            _searchDebounce?.cancel();
+                            // Schedule a new one 300ms from now
+                            _searchDebounce = Timer(
+                              const Duration(milliseconds: 300),
+                              () {
+                                if (mounted) setState(() {});
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      StreamBuilder<List<SettingsEntry>>(
+                        stream: db.watchAllEntries(),
+                        builder: (context, snapshot) {
+                          final keywords =
+                              snapshot.data?.map((e) => e.value).toList() ??
+                              const [];
+
+                          return RawAutocomplete<String>(
+                            textEditingController: _filterController,
+                            focusNode: _filterFocus,
+                            optionsBuilder: (value) {
+                              final q = value.text.trim().toLowerCase();
+                              if (q.isEmpty)
+                                return const Iterable<String>.empty();
+                              return keywords.where(
+                                (k) => k.toLowerCase().contains(q),
+                              );
+                            },
+                            fieldViewBuilder:
+                                (context, controller, focusNode, _) {
+                                  return _ShadowedField(
+                                    child: TextField(
+                                      controller: controller,
+                                      focusNode: focusNode,
+                                      decoration: InputDecoration(
+                                        hintText: 'Filter by keyword...',
+                                        prefixIcon: const Icon(
+                                          Icons.filter_alt_outlined,
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.white,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 0,
+                                            ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                      ),
+                                      onSubmitted: (text) {
+                                        final match = keywords.firstWhere(
+                                          (k) =>
+                                              k.toLowerCase() ==
+                                              text.trim().toLowerCase(),
+                                          orElse: () => text.trim(),
+                                        );
+                                        if (match.isNotEmpty &&
+                                            !_activeFilters.contains(match)) {
+                                          setState(
+                                            () => _activeFilters.add(match),
+                                          );
+                                        }
+                                        controller.clear();
+                                        focusNode.unfocus();
+                                      },
+                                    ),
                                   );
                                 },
+                            optionsViewBuilder: (context, onSelected, options) {
+                              return Align(
+                                alignment: Alignment.topLeft,
+                                child: Material(
+                                  color: Colors.white,
+                                  elevation: 4,
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxHeight: 220,
+                                    ),
+                                    child: ListView.builder(
+                                      shrinkWrap: true,
+                                      padding: EdgeInsets.zero,
+                                      itemCount: options.length,
+                                      itemBuilder: (context, index) {
+                                        final option = options.elementAt(index);
+                                        return ListTile(
+                                          dense: true,
+                                          leading: const Icon(
+                                            Icons.tag,
+                                            size: 18,
+                                          ),
+                                          title: Text(option),
+                                          onTap: () => onSelected(option),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                            onSelected: (value) {
+                              if (!_activeFilters.contains(value)) {
+                                setState(() => _activeFilters.add(value));
+                              }
+                              _filterController.clear();
+                              _filterFocus.unfocus();
+                            },
+                          );
+                        },
+                      ),
+                      if (_activeFilters.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final filter in _activeFilters)
+                              Chip(
+                                label: Text(filter),
+                                labelStyle: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF602e9e),
+                                ),
+                                backgroundColor: const Color(0xFF602e9e)
+                                    .withOpacity(0.1),
+                                deleteIcon: const Icon(Icons.close, size: 16),
+                                onDeleted: () => setState(
+                                  () => _activeFilters.remove(filter),
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      },
-                      onSelected: (value) {
-                        if (!_activeFilters.contains(value)) {
-                          setState(() => _activeFilters.add(value));
-                        }
-                        _filterController.clear();
-                        _filterFocus.unfocus();
-                      },
-                    );
-                  },
-                ),
-                  if (_activeFilters.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final filter in _activeFilters)
-                          Chip(
-                            label: Text(filter),
-                            labelStyle: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF602e9e),
-                            ),
-                            backgroundColor:
-                                const Color(0xFF602e9e).withOpacity(0.1),
-                            deleteIcon: const Icon(Icons.close, size: 16),
-                            onDeleted: () =>
-                                setState(() => _activeFilters.remove(filter)),
-                          ),
+                          ],
+                        ),
                       ],
-                    ),
-                  ],
 
-                  const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                  if (allItems.isEmpty)
-                    const _EmptyState(
-                      icon: Icons.inventory_2_outlined,
-                      title: 'No items yet',
-                      message: 'Tap + to add your first item.',
-                    )
-                  else if (items.isEmpty)
-                    const _EmptyState(
-                      icon: Icons.search_off,
-                      title: 'No matches',
-                      message: 'Try a different search or filter.',
-                    )
-                  else
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 16,
-                      children: [
-                        for (final item in items)
-                          ItemCard(
-                            title: item.name,
-                            price: item.finalPrice,
-                            imagePath: item.picturePath,        
-                            quantity: _isSelectionMode
-                                ? (_cart[item.id] ?? 0)
-                                : null,
-                            onIncrement: _isSelectionMode
-                                ? () => _increment(item.id!)
-                                : null,
-                            onDecrement: _isSelectionMode
-                                ? () => _decrement(item.id!)
-                                : null,
-                            onViewDetails: () => _viewItem(item),
-                            onEdit: () => _editItem(item),
-                            onDelete: () => _confirmDelete(item),
-                          ),
-                      ],
-                    ),
-                ],
-              ),
+                      if (allItems.isEmpty)
+                        const _EmptyState(
+                          icon: Icons.inventory_2_outlined,
+                          title: 'No items yet',
+                          message: 'Tap + to add your first item.',
+                        )
+                      else if (items.isEmpty)
+                        const _EmptyState(
+                          icon: Icons.search_off,
+                          title: 'No matches',
+                          message: 'Try a different search or filter.',
+                        )
+                      else
+                        Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          children: [
+                            for (final item in items)
+                              ItemCard(
+                                title: item.name,
+                                price: item.finalPrice,
+                                imagePath: item.picturePath,
+                                bulkDealLabel: _dealLabelFor(item),
+                                quantity: _isSelectionMode
+                                    ? (_cart[item.id] ?? 0)
+                                    : null,
+                                onIncrement: _isSelectionMode
+                                    ? () => _increment(item.id!)
+                                    : null,
+                                onDecrement: _isSelectionMode
+                                    ? () => _decrement(item.id!)
+                                    : null,
+                                onViewDetails: () => _viewItem(item),
+                                onEdit: () => _editItem(item),
+                                onDelete: () => _confirmDelete(item),
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                );
+              },
             );
           },
         ),
@@ -332,12 +630,11 @@ class _ItemsScreenState extends State<ItemsScreen> {
       floatingActionButton: _isSelectionMode
           ? _TotalBar(
               total: _total,
+              savings: _savings,
               itemCount: _totalItems,
               color: const Color(0xFF602e9e),
               onCancel: _exitSelection,
-              onCheckout: () {
-                _exitSelection();
-              },
+              onCheckout: _checkout,
             )
           : Column(
               mainAxisSize: MainAxisSize.min,
@@ -413,9 +710,6 @@ class _ItemsScreenState extends State<ItemsScreen> {
     }
   }
 }
-// ─────────────────────────────────────────────────
-// Helper widgets — all at file level, outside the class
-// ─────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState({
@@ -436,9 +730,7 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon,
-              size: 56,
-              color: const Color(0xFF602e9e).withOpacity(0.4)),
+          Icon(icon, size: 56, color: const Color(0xFF602e9e).withOpacity(0.4)),
           const SizedBox(height: 16),
           Text(
             title,
@@ -485,6 +777,7 @@ class _ShadowedField extends StatelessWidget {
 class _TotalBar extends StatelessWidget {
   const _TotalBar({
     required this.total,
+    required this.savings,
     required this.itemCount,
     required this.color,
     required this.onCancel,
@@ -492,6 +785,7 @@ class _TotalBar extends StatelessWidget {
   });
 
   final double total;
+  final double savings;
   final int itemCount;
   final Color color;
   final VoidCallback onCancel;
@@ -531,6 +825,15 @@ class _TotalBar extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (savings > 0)
+                    Text(
+                      'Saved ₱${savings.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        color: Colors.greenAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -554,8 +857,10 @@ class _TotalBar extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
               ),
               child: const Text(
                 'Checkout',

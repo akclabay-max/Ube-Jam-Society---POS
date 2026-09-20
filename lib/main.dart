@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'widgets/store-cover.dart';
 import 'widgets/menu-bar.dart';
@@ -33,6 +34,12 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFfffeec),
       ),
       home: const MyHomePage(title: 'Ube Jam Society'),
+       localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('en')],
     );
   }
 }

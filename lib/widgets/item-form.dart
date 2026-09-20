@@ -1,10 +1,12 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:drift/drift.dart' hide Column;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+
 import '../database/database.dart';
 
 Future<String> saveImagePermanently(String originalPath) async {
@@ -34,7 +36,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
   late final TextEditingController _contributor;
   late final TextEditingController _fandom;
   late final TextEditingController _category;
-  late final TextEditingController _discount;
+  int? _bulkDealId;
 
   bool _saving = false;
   String? _pickedImagePath;
@@ -49,7 +51,7 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     _contributor = TextEditingController(text: item?.contributor ?? '');
     _fandom = TextEditingController(text: item?.fandom ?? '');
     _category = TextEditingController(text: item?.category ?? '');
-    _discount = TextEditingController(text: item?.discount.toString() ?? '0');
+    _bulkDealId = item?.bulkDealId;
     _pickedImagePath = item?.picturePath;
   }
 
@@ -61,7 +63,6 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     _contributor.dispose();
     _fandom.dispose();
     _category.dispose();
-    _discount.dispose();
     super.dispose();
   }
 
@@ -69,25 +70,26 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     final picker = ImagePicker();
 
     final ImageSource? source = await showModalBottomSheet<ImageSource>(
-    context: context,                             // ✅ named, required
-    builder: (ctx) => SafeArea(                   // ✅ named, required
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.camera_alt),
-            title: const Text('Take a photo'),
-            onTap: () => Navigator.pop(ctx, ImageSource.camera),
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo_library),
-            title: const Text('Choose from gallery'),
-            onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-          ),
-        ],
+      context: context, // ✅ named, required
+      builder: (ctx) => SafeArea(
+        // ✅ named, required
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Take a photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
 
     if (source == null) return;
 
@@ -118,18 +120,19 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
         _contributor.text.trim().isEmpty ? null : _contributor.text.trim(),
       ),
       fandom: Value(_fandom.text.trim().isEmpty ? null : _fandom.text.trim()),
-      category:
-          Value(_category.text.trim().isEmpty ? null : _category.text.trim()),
-      discount: Value(double.tryParse(_discount.text.trim()) ?? 0),
+      category: Value(
+        _category.text.trim().isEmpty ? null : _category.text.trim(),
+      ),
+      bulkDealId: Value(_bulkDealId),
       picturePath: Value(_pickedImagePath),
     );
 
     if (widget.item == null) {
       await db.into(db.items).insert(entry);
     } else {
-      await (db.update(db.items)
-            ..where((t) => t.id.equals(widget.item!.id!)))
-          .write(entry);
+      await (db.update(
+        db.items,
+      )..where((t) => t.id.equals(widget.item!.id!))).write(entry);
     }
 
     if (!mounted) return;
@@ -142,7 +145,14 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     final isEditing = widget.item != null;
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
 
-    return Padding(
+    return StreamBuilder<List<BulkDeal>>(
+      stream: db.watchAllBulkDeals(),
+      builder: (context, snapshot) {
+        final deals = snapshot.data ?? const <BulkDeal>[];
+        final selectedDealId = deals.any((deal) => deal.id == _bulkDealId)
+          ? _bulkDealId
+          : null;
+        return Padding(
       padding: EdgeInsets.only(bottom: viewInsets),
       child: Container(
         decoration: const BoxDecoration(
@@ -205,8 +215,10 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                           'Price (₱)',
                           required: true,
                           keyboard: TextInputType.number,
+                          onChanged: (_) => setState(() {}),
                           validator: (v) {
-                            if (v == null || v.trim().isEmpty) return 'Required';
+                            if (v == null || v.trim().isEmpty)
+                              return 'Required';
                             if (double.tryParse(v.trim()) == null) {
                               return 'Enter a number';
                             }
@@ -233,18 +245,33 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                   ),
                   const SizedBox(height: 12),
 
-                  _field(
-                    _discount,
-                    'Discount (%)',
-                    keyboard: TextInputType.number,
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) return null;
-                      final d = double.tryParse(v.trim());
-                      if (d == null) return 'Enter a number';
-                      if (d < 0 || d > 100) return '0–100 only';
-                      return null;
-                    },
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<int?>(
+                    value: selectedDealId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Bulk Deal (optional)',
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('No bulk deal'),
+                      ),
+                      for (final deal in deals)
+                        DropdownMenuItem<int?>(
+                          value: deal.id,
+                          child: Text(
+                            '${deal.name} · ${deal.qty} for ₱${deal.price.toStringAsFixed(2)}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) => setState(() => _bulkDealId = value),
                   ),
+
                   const SizedBox(height: 12),
 
                   _SettingsDropdown(
@@ -296,14 +323,15 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
                         errorBuilder: (_, __, ___) => Container(
                           height: 120,
                           color: Colors.grey.shade200,
-                          child: const Icon(Icons.broken_image,
-                              color: Colors.grey),
+                          child: const Icon(
+                            Icons.broken_image,
+                            color: Colors.grey,
+                          ),
                         ),
                       ),
                     ),
                     TextButton(
-                      onPressed: () =>
-                          setState(() => _pickedImagePath = null),
+                      onPressed: () => setState(() => _pickedImagePath = null),
                       child: const Text(
                         'Remove Picture',
                         style: TextStyle(color: Colors.red),
@@ -344,8 +372,10 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
               ),
             ),
           ),
-        ),
-      ),
+          ),
+        )
+        );
+      },
     );
   }
 
@@ -355,19 +385,20 @@ class _ItemFormSheetState extends State<ItemFormSheet> {
     bool required = false,
     TextInputType? keyboard,
     String? Function(String?)? validator,
+    ValueChanged<String>? onChanged,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboard,
+      onChanged: onChanged,
       decoration: InputDecoration(
         labelText: label + (required ? ' *' : ''),
         filled: true,
         fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      validator: validator ??
+      validator:
+          validator ??
           (required
               ? (v) => (v == null || v.trim().isEmpty) ? 'Required' : null
               : null),
@@ -400,8 +431,8 @@ class _SettingsDropdown extends StatelessWidget {
 
         final options =
             (value != null && value!.isNotEmpty && !values.contains(value))
-                ? [value!, ...values]
-                : values;
+            ? [value!, ...values]
+            : values;
 
         return DropdownButtonFormField<String>(
           value: (value?.isEmpty ?? true) ? null : value,
@@ -410,9 +441,7 @@ class _SettingsDropdown extends StatelessWidget {
             labelText: label,
             filled: true,
             fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
           items: [
             const DropdownMenuItem<String>(

@@ -48,7 +48,4 @@ class Item {
       paymentMethod: paymentMethod ?? this.paymentMethod,
     );
   }
-
-  /// Price after applying discount (treats discount as a percentage). The 4 for 100 type stuff. Come back to this lmao
-  double get finalPrice => price * (1 - discount / 100);
 }
