@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-
 import 'dart:convert';
-
 import 'package:provider/provider.dart';
-
 import '/widgets/store-cover.dart';
 import '/widgets/menu-bar.dart';
 import '/widgets/grid-background.dart';

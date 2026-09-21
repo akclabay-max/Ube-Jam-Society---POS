@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:drift/drift.dart' hide Column;
 import 'package:provider/provider.dart';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
-
-import 'dart:async';
 
 import '/widgets/grid-background.dart';
 import '/widgets/item-card.dart';
@@ -25,20 +24,28 @@ class ItemsScreen extends StatefulWidget {
 
 class _ItemsScreenState extends State<ItemsScreen> {
   // ── Controllers ─────────────────────────────────
+  final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _filterController = TextEditingController();
   final FocusNode _filterFocus = FocusNode();
   Timer? _searchDebounce;
 
-  // ── Filter suggestions ──────────────────────────
+  // ── Stream subscriptions ────────────────────────
+  StreamSubscription<List<Item>>? _itemsSub;
+  StreamSubscription<List<BulkDeal>>? _dealsSub;
+  StreamSubscription<List<SettingsEntry>>? _settingsSub;
+
+  // ── Cached data ─────────────────────────────────
+  List<Item> _currentItems = [];
+  List<BulkDeal> _bulkDeals = [];
+  List<SettingsEntry> _allSettings = [];
+  bool _loading = true;
 
   final List<String> _activeFilters = [];
 
   // ── Selection mode ──────────────────────────────
   bool _isSelectionMode = false;
   final Map<int, int> _cart = {}; // item id → quantity
-  List<Item> _currentItems = []; // latest DB snapshot
-  List<BulkDeal> _bulkDeals = [];
 
   // ── Computed values ─────────────────────────────
   double get _total => totalForCart(_currentItems, _bulkDeals, _cart);
@@ -54,6 +61,44 @@ class _ItemsScreenState extends State<ItemsScreen> {
       }
     }
     return null;
+  }
+
+  // ── Lifecycle ───────────────────────────────────
+  @override
+  void initState() {
+    super.initState();
+    final db = Provider.of<AppDatabase>(context, listen: false);
+
+    _itemsSub = db.watchAllItems().listen((items) {
+      if (!mounted) return;
+      setState(() {
+        _currentItems = items;
+        _loading = false;
+      });
+    });
+
+    _dealsSub = db.watchAllBulkDeals().listen((deals) {
+      if (!mounted) return;
+      setState(() => _bulkDeals = deals);
+    });
+
+    _settingsSub = db.watchAllEntries().listen((entries) {
+      if (!mounted) return;
+      setState(() => _allSettings = entries);
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _itemsSub?.cancel();
+    _dealsSub?.cancel();
+    _settingsSub?.cancel();
+    _scrollController.dispose();
+    _searchController.dispose();
+    _filterController.dispose();
+    _filterFocus.dispose();
+    super.dispose();
   }
 
   // ── Selection mode actions ──────────────────────
@@ -72,7 +117,6 @@ class _ItemsScreenState extends State<ItemsScreen> {
 
     final currentQty = _cart[id] ?? 0;
     if (currentQty >= item.stock) {
-      // Already at max — show a brief message
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -338,291 +382,235 @@ class _ItemsScreenState extends State<ItemsScreen> {
     }).toList();
   }
 
-  // ── Lifecycle ───────────────────────────────────
-  @override
-  void dispose() {
-    _searchDebounce?.cancel();
-    _searchController.dispose();
-    _filterController.dispose();
-    _filterFocus.dispose();
-    super.dispose();
-  }
-
   // ── Build ───────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final db = Provider.of<AppDatabase>(context);
+    if (_loading) {
+      return const Scaffold(
+        body: GridBackground(
+          cellSize: 20,
+          lineColor: Color(0x33d1d628),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    final items = _applyFilters(_currentItems);
+    final keywords = _allSettings.map((e) => e.value).toList();
 
     return Scaffold(
       body: GridBackground(
         cellSize: 20,
         lineColor: const Color(0x33d1d628),
-        child: StreamBuilder<List<BulkDeal>>(
-          stream: db.watchAllBulkDeals(),
-          builder: (context, dealSnapshot) {
-            _bulkDeals = dealSnapshot.data ?? [];
-            return StreamBuilder<List<Item>>(
-              stream: db.watchAllItems(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 140),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Items',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF602e9e),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: _importItems,
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text('Import Excel'),
+                ),
+              ),
+              const SizedBox(height: 12),
 
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(
-                        'Failed to load items:\n${snapshot.error}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.red),
+              _ShadowedField(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search items...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {});
+                            },
+                          ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 0,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onChanged: (value) {
+                    _searchDebounce?.cancel();
+                    _searchDebounce = Timer(
+                      const Duration(milliseconds: 300),
+                      () {
+                        if (mounted) setState(() {});
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              RawAutocomplete<String>(
+                textEditingController: _filterController,
+                focusNode: _filterFocus,
+                optionsBuilder: (value) {
+                  final q = value.text.trim().toLowerCase();
+                  if (q.isEmpty) return const Iterable<String>.empty();
+                  return keywords.where((k) => k.toLowerCase().contains(q));
+                },
+                fieldViewBuilder: (context, controller, focusNode, _) {
+                  return _ShadowedField(
+                    child: TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: InputDecoration(
+                        hintText: 'Filter by keyword...',
+                        prefixIcon: const Icon(Icons.filter_alt_outlined),
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 0,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
+                      onSubmitted: (text) {
+                        final match = keywords.firstWhere(
+                          (k) =>
+                              k.toLowerCase() == text.trim().toLowerCase(),
+                          orElse: () => text.trim(),
+                        );
+                        if (match.isNotEmpty &&
+                            !_activeFilters.contains(match)) {
+                          setState(() => _activeFilters.add(match));
+                        }
+                        controller.clear();
+                        focusNode.unfocus();
+                      },
                     ),
                   );
-                }
-
-                final allItems = snapshot.data ?? [];
-                _currentItems = allItems;
-                final items = _applyFilters(allItems);
-
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 140),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Items',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF602e9e),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: OutlinedButton.icon(
-                          onPressed: _importItems,
-                          icon: const Icon(Icons.upload_file),
-                          label: const Text('Import Excel'),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      _ShadowedField(
-                        child: TextField(
-                          controller: _searchController,
-                          decoration: InputDecoration(
-                            hintText: 'Search items...',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: _searchController.text.isEmpty
-                                ? null
-                                : IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      setState(() {});
-                                    },
-                                  ),
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 0,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                          ),
-                          onChanged: (value) {
-                            // Cancel any pending search
-                            _searchDebounce?.cancel();
-                            // Schedule a new one 300ms from now
-                            _searchDebounce = Timer(
-                              const Duration(milliseconds: 300),
-                              () {
-                                if (mounted) setState(() {});
-                              },
+                },
+                optionsViewBuilder: (context, onSelected, options) {
+                  return Align(
+                    alignment: Alignment.topLeft,
+                    child: Material(
+                      color: Colors.white,
+                      elevation: 4,
+                      borderRadius: BorderRadius.circular(12),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          itemCount: options.length,
+                          itemBuilder: (context, index) {
+                            final option = options.elementAt(index);
+                            return ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.tag, size: 18),
+                              title: Text(option),
+                              onTap: () => onSelected(option),
                             );
                           },
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      StreamBuilder<List<SettingsEntry>>(
-                        stream: db.watchAllEntries(),
-                        builder: (context, snapshot) {
-                          final keywords =
-                              snapshot.data?.map((e) => e.value).toList() ??
-                              const [];
+                    ),
+                  );
+                },
+                onSelected: (value) {
+                  if (!_activeFilters.contains(value)) {
+                    setState(() => _activeFilters.add(value));
+                  }
+                  _filterController.clear();
+                  _filterFocus.unfocus();
+                },
+              ),
 
-                          return RawAutocomplete<String>(
-                            textEditingController: _filterController,
-                            focusNode: _filterFocus,
-                            optionsBuilder: (value) {
-                              final q = value.text.trim().toLowerCase();
-                              if (q.isEmpty)
-                                return const Iterable<String>.empty();
-                              return keywords.where(
-                                (k) => k.toLowerCase().contains(q),
-                              );
-                            },
-                            fieldViewBuilder:
-                                (context, controller, focusNode, _) {
-                                  return _ShadowedField(
-                                    child: TextField(
-                                      controller: controller,
-                                      focusNode: focusNode,
-                                      decoration: InputDecoration(
-                                        hintText: 'Filter by keyword...',
-                                        prefixIcon: const Icon(
-                                          Icons.filter_alt_outlined,
-                                        ),
-                                        filled: true,
-                                        fillColor: Colors.white,
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: 0,
-                                            ),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                      ),
-                                      onSubmitted: (text) {
-                                        final match = keywords.firstWhere(
-                                          (k) =>
-                                              k.toLowerCase() ==
-                                              text.trim().toLowerCase(),
-                                          orElse: () => text.trim(),
-                                        );
-                                        if (match.isNotEmpty &&
-                                            !_activeFilters.contains(match)) {
-                                          setState(
-                                            () => _activeFilters.add(match),
-                                          );
-                                        }
-                                        controller.clear();
-                                        focusNode.unfocus();
-                                      },
-                                    ),
-                                  );
-                                },
-                            optionsViewBuilder: (context, onSelected, options) {
-                              return Align(
-                                alignment: Alignment.topLeft,
-                                child: Material(
-                                  color: Colors.white,
-                                  elevation: 4,
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxHeight: 220,
-                                    ),
-                                    child: ListView.builder(
-                                      shrinkWrap: true,
-                                      padding: EdgeInsets.zero,
-                                      itemCount: options.length,
-                                      itemBuilder: (context, index) {
-                                        final option = options.elementAt(index);
-                                        return ListTile(
-                                          dense: true,
-                                          leading: const Icon(
-                                            Icons.tag,
-                                            size: 18,
-                                          ),
-                                          title: Text(option),
-                                          onTap: () => onSelected(option),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                            onSelected: (value) {
-                              if (!_activeFilters.contains(value)) {
-                                setState(() => _activeFilters.add(value));
-                              }
-                              _filterController.clear();
-                              _filterFocus.unfocus();
-                            },
-                          );
-                        },
+              if (_activeFilters.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final filter in _activeFilters)
+                      Chip(
+                        label: Text(filter),
+                        labelStyle: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF602e9e),
+                        ),
+                        backgroundColor:
+                            const Color(0xFF602e9e).withOpacity(0.1),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () =>
+                            setState(() => _activeFilters.remove(filter)),
                       ),
-                      if (_activeFilters.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final filter in _activeFilters)
-                              Chip(
-                                label: Text(filter),
-                                labelStyle: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF602e9e),
-                                ),
-                                backgroundColor: const Color(0xFF602e9e)
-                                    .withOpacity(0.1),
-                                deleteIcon: const Icon(Icons.close, size: 16),
-                                onDeleted: () => setState(
-                                  () => _activeFilters.remove(filter),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
+                  ],
+                ),
+              ],
 
-                      const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-                      if (allItems.isEmpty)
-                        const _EmptyState(
-                          icon: Icons.inventory_2_outlined,
-                          title: 'No items yet',
-                          message: 'Tap + to add your first item.',
-                        )
-                      else if (items.isEmpty)
-                        const _EmptyState(
-                          icon: Icons.search_off,
-                          title: 'No matches',
-                          message: 'Try a different search or filter.',
-                        )
-                      else
-                        Wrap(
-                          spacing: 16,
-                          runSpacing: 16,
-                          children: [
-                            for (final item in items)
-                              ItemCard(
-                                title: item.name,
-                                price: item.finalPrice,
-                                imagePath: item.picturePath,
-                                bulkDealLabel: _dealLabelFor(item),
-                                quantity: _isSelectionMode
-                                    ? (_cart[item.id] ?? 0)
-                                    : null,
-                                onIncrement: _isSelectionMode
-                                    ? () => _increment(item.id!)
-                                    : null,
-                                onDecrement: _isSelectionMode
-                                    ? () => _decrement(item.id!)
-                                    : null,
-                                onViewDetails: () => _viewItem(item),
-                                onEdit: () => _editItem(item),
-                                onDelete: () => _confirmDelete(item),
-                              ),
-                          ],
-                        ),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
+              if (_currentItems.isEmpty)
+                const _EmptyState(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'No items yet',
+                  message: 'Tap + to add your first item.',
+                )
+              else if (items.isEmpty)
+                const _EmptyState(
+                  icon: Icons.search_off,
+                  title: 'No matches',
+                  message: 'Try a different search or filter.',
+                )
+              else
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: [
+                    for (final item in items)
+                      ItemCard(
+                        key: ValueKey(item.id),
+                        title: item.name,
+                        price: item.finalPrice,
+                        imagePath: item.picturePath,
+                        bulkDealLabel: _dealLabelFor(item),
+                        quantity: _isSelectionMode
+                            ? (_cart[item.id] ?? 0)
+                            : null,
+                        onIncrement: _isSelectionMode
+                            ? () => _increment(item.id!)
+                            : null,
+                        onDecrement: _isSelectionMode
+                            ? () => _decrement(item.id!)
+                            : null,
+                        onViewDetails: () => _viewItem(item),
+                        onEdit: () => _editItem(item),
+                        onDelete: () => _confirmDelete(item),
+                      ),
+                  ],
+                ),
+            ],
+          ),
         ),
       ),
 

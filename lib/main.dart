@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'widgets/store-cover.dart';
 import 'widgets/menu-bar.dart';
 import 'widgets/grid-background.dart';
@@ -12,14 +13,25 @@ import 'screens/scan-add.dart';
 import 'screens/items.dart';
 import 'screens/settings.dart';
 import 'database/database.dart';
-void main() {
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 1. Initialize Supabase first
+  await Supabase.initialize(
+    url: 'https://hhmmgexyhbuvslmsgvqr.supabase.co',
+    anonKey: 'sb_publishable_VMDi_3f7EUndZ4HzE1cUaw_mBTJTJao',  
+  );
+
+  // 2. Then create the database and run the app
   final database = AppDatabase();
-  runApp( 
+
+  runApp(
     Provider<AppDatabase>.value(
-    value: database,
-    child: const MyApp(),
-  ));
+      value: database,
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -34,7 +46,7 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFfffeec),
       ),
       home: const MyHomePage(title: 'Ube Jam Society'),
-       localizationsDelegates: const [
+      localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
@@ -75,7 +87,7 @@ class _MyHomePageState extends State<MyHomePage> {
           children: [
             const StorefrontAwning(),
             Expanded(
-              child: IndexedStack(      
+              child: IndexedStack(
                 index: _currentIndex,
                 children: _screens,
               ),
