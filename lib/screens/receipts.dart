@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '/database/database.dart';
 import '/widgets/receipt-card.dart';
 import '/widgets/grid-background.dart';
+import '/utils/receipt-export.dart';       
 
 class ReceiptsScreen extends StatelessWidget {
   const ReceiptsScreen({super.key});
@@ -28,13 +29,27 @@ class ReceiptsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Receipts',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF602e9e),
-                    ),
+                  // ── Header row with export button ──
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Receipts',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF602e9e),
+                          ),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: receipts.isEmpty
+                            ? null
+                            : () => _export(context, receipts),
+                        icon: const Icon(Icons.file_download_outlined),
+                        label: const Text('Export Excel'),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   if (receipts.isEmpty)
@@ -65,6 +80,17 @@ class ReceiptsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _export(BuildContext context, List<Receipt> receipts) async {
+    try {
+      await exportReceiptsToExcel(receipts);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    }
   }
 
   List<ReceiptItem> _items(String json) {
