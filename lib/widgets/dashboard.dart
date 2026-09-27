@@ -35,8 +35,6 @@ class DashboardTab extends StatelessWidget {
           builder: (context, constraints) {
             final available = constraints.maxWidth;
             const spacing = 16.0;
-
-            // Dashboard cards are bigger — target ~360px wide.
             final columns = (available / 360).floor().clamp(1, 3);
             final cardWidth =
                 (available - (columns - 1) * spacing) / columns;
@@ -70,7 +68,6 @@ class DashboardTab extends StatelessWidget {
                                 ? const Color(0xFF1B8E3D)
                                 : const Color(0xFFCD1C1C),
                             number: '₱${profit.toStringAsFixed(2)}',
-                            // 👇 pass nothing — parent SizedBox handles width
                             height: 110,
                           );
                         },

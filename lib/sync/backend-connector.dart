@@ -13,7 +13,7 @@ class MyBackendConnector extends PowerSyncBackendConnector {
       throw AssertionError('User is not logged in');
     }
     return PowerSyncCredentials(
-      endpoint: 'https://6ab0b9f8a77ca1231d29f06d.powersync.journeyapps.com',
+      endpoint: '',
       token: session.accessToken,
     );
   }

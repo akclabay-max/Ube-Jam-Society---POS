@@ -17,13 +17,10 @@ import 'database/database.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: 'https://hhmmgexyhbuvslmsgvqr.supabase.co',
-    anonKey: 'sb_publishable_VMDi_3f7EUndZ4HzE1cUaw_mBTJTJao',  
-  );
-
-  await Supabase.instance.client.auth.signInAnonymously();
-
+  //await Supabase.initialize(
+  //  url: 'https://hhmmgexyhbuvslmsgvqr.supabase.co',
+  //  anonKey:'sb_publishable_VMDi_3f7EUndZ4HzE1cUaw_mBTJTJao',  
+ // );
   final database = AppDatabase();
 
   runApp(
@@ -32,6 +29,7 @@ Future<void> main() async {
       child: const MyApp(),
     ),
   );
+
 }
 
 class MyApp extends StatelessWidget {
