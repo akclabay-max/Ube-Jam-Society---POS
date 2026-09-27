@@ -75,22 +75,27 @@ class UJSButton extends StatelessWidget {
     }
 
     if (icon != null) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 20),
-          const SizedBox(width: 8),
-          Text(
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 16),                     
+        const SizedBox(width: 6),                
+        Flexible(                               
+          child: Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,      
+            softWrap: false,
             style: const TextStyle(
-              fontSize: 15,
+              fontSize: 13,                       
               fontWeight: FontWeight.w600,
             ),
           ),
-        ],
-      );
-    }
+        ),
+      ],
+    );
+  }
 
     return Text(
       label,

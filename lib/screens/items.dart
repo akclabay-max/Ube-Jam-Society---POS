@@ -544,7 +544,28 @@ class _ItemsScreenState extends State<ItemsScreen> {
                   _filterFocus.unfocus();
                 },
               ),
-
+                if (_activeFilters.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final filter in _activeFilters)
+                      Chip(
+                        label: Text(filter),
+                        labelStyle: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF602e9e),
+                        ),
+                        backgroundColor:
+                            const Color(0xFF602e9e).withOpacity(0.1),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () =>
+                            setState(() => _activeFilters.remove(filter)),
+                      ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
 
               if (_currentItems.isEmpty)
