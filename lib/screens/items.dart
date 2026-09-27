@@ -545,29 +545,6 @@ class _ItemsScreenState extends State<ItemsScreen> {
                 },
               ),
 
-              if (_activeFilters.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final filter in _activeFilters)
-                      Chip(
-                        label: Text(filter),
-                        labelStyle: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF602e9e),
-                        ),
-                        backgroundColor:
-                            const Color(0xFF602e9e).withOpacity(0.1),
-                        deleteIcon: const Icon(Icons.close, size: 16),
-                        onDeleted: () =>
-                            setState(() => _activeFilters.remove(filter)),
-                      ),
-                  ],
-                ),
-              ],
-
               const SizedBox(height: 16),
 
               if (_currentItems.isEmpty)
@@ -583,34 +560,51 @@ class _ItemsScreenState extends State<ItemsScreen> {
                   message: 'Try a different search or filter.',
                 )
               else
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 16,
-                  children: [
-                    for (final item in items)
-                      ItemCard(
-                        key: ValueKey(item.id),
-                        title: item.name,
-                        price: item.finalPrice,
-                        imagePath: item.picturePath,
-                        bulkDealLabel: _dealLabelFor(item),
-                        quantity: _isSelectionMode
-                            ? (_cart[item.id] ?? 0)
-                            : null,
-                        onIncrement: _isSelectionMode
-                            ? () => _increment(item.id!)
-                            : null,
-                        onDecrement: _isSelectionMode
-                            ? () => _decrement(item.id!)
-                            : null,
-                        onViewDetails: () => _viewItem(item),
-                        onEdit: () => _editItem(item),
-                        onDelete: () => _confirmDelete(item),
-                      ),
-                  ],
-                ),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final available = constraints.maxWidth;
+
+                  const spacing = 16.0;
+                  final columns = (available / 180).floor().clamp(2, 6);
+
+                  final cardWidth =
+                      (available - (columns - 1) * spacing) / columns;
+
+                  return Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    children: [
+                      for (final item in items)
+                        SizedBox(
+                          width: cardWidth,
+                          height: cardWidth * 1.5,   
+                          child: ItemCard(
+                            key: ValueKey(item.id),
+                            title: item.name,
+                            price: item.finalPrice,
+                            imagePath: item.picturePath,
+                            bulkDealLabel: _dealLabelFor(item),
+                            quantity: _isSelectionMode
+                                ? (_cart[item.id] ?? 0)
+                                : null,
+                            onIncrement: _isSelectionMode
+                                ? () => _increment(item.id!)
+                                : null,
+                            onDecrement: _isSelectionMode
+                                ? () => _decrement(item.id!)
+                                : null,
+                            onViewDetails: () => _viewItem(item),
+                            onEdit: () => _editItem(item),
+                            onDelete: () => _confirmDelete(item),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
+          
         ),
       ),
 

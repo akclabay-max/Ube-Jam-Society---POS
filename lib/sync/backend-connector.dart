@@ -1,4 +1,3 @@
-// lib/sync/backend_connector.dart
 import 'package:powersync/powersync.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -14,7 +13,7 @@ class MyBackendConnector extends PowerSyncBackendConnector {
       throw AssertionError('User is not logged in');
     }
     return PowerSyncCredentials(
-      endpoint: 'https://YOUR_INSTANCE.powersync.journeyapps.com',
+      endpoint: 'https://6ab0b9f8a77ca1231d29f06d.powersync.journeyapps.com',
       token: session.accessToken,
     );
   }

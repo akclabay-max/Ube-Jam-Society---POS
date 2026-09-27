@@ -17,13 +17,13 @@ import 'database/database.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. Initialize Supabase first
   await Supabase.initialize(
     url: 'https://hhmmgexyhbuvslmsgvqr.supabase.co',
     anonKey: 'sb_publishable_VMDi_3f7EUndZ4HzE1cUaw_mBTJTJao',  
   );
 
-  // 2. Then create the database and run the app
+  await Supabase.instance.client.auth.signInAnonymously();
+
   final database = AppDatabase();
 
   runApp(

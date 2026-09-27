@@ -30,35 +30,57 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: [
-                  _SettingsList(
-                    db: db,
-                    listType: 'contributor',
-                    title: 'Contributors',
-                    subtitle: 'People who share profits',
-                    icon: Icons.people_outline,
-                  ),
-                  _SettingsList(
-                    db: db,
-                    listType: 'fandom',
-                    title: 'Fandoms',
-                    subtitle: 'Series and universes',
-                    icon: Icons.auto_stories_outlined,
-                    color: const Color(0xFF1E88E5),
-                  ),
-                  _SettingsList(
-                    db: db,
-                    listType: 'category',
-                    title: 'Categories',
-                    subtitle: 'Product groupings',
-                    icon: Icons.category_outlined,
-                    color: const Color(0xFF1B8E3D),
-                  ),
-                  _BulkDealsList(db: db),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final available = constraints.maxWidth;
+
+                  const spacing = 16.0;
+                  final columns = (available / 360).floor().clamp(1, 3);
+                  final cardWidth = (available - (columns - 1) * spacing) / columns;
+
+                  return Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    children: [
+                      SizedBox(
+                        width: cardWidth,
+                        child: _SettingsList(
+                          db: db,
+                          listType: 'contributor',
+                          title: 'Contributors',
+                          subtitle: 'People who share profits',
+                          icon: Icons.people_outline,
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _SettingsList(
+                          db: db,
+                          listType: 'fandom',
+                          title: 'Fandoms',
+                          subtitle: 'Series and universes',
+                          icon: Icons.auto_stories_outlined,
+                          color: const Color(0xFF1E88E5),
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _SettingsList(
+                          db: db,
+                          listType: 'category',
+                          title: 'Categories',
+                          subtitle: 'Product groupings',
+                          icon: Icons.category_outlined,
+                          color: const Color(0xFF1B8E3D),
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _BulkDealsList(db: db),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           ),

@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
-
 import 'dart:convert';
-
 import 'package:provider/provider.dart';
-
 import '/database/database.dart';
 import '/widgets/receipt-card.dart';
 import '/widgets/grid-background.dart';
-import '/utils/receipt-export.dart';       
+import '/utils/receipt-export.dart';
 
 class ReceiptsScreen extends StatelessWidget {
   const ReceiptsScreen({super.key});
@@ -52,26 +49,44 @@ class ReceiptsScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
+
                   if (receipts.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 48),
                       child: Text('No receipts yet.'),
                     )
                   else
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 16,
-                      children: [
-                        for (final receipt in receipts)
-                          ReceiptCard(
-                            receiptNumber: receipt.receiptNumber,
-                            total: receipt.total,
-                            itemCount: _itemCount(receipt.itemsJson),
-                            date: receipt.createdAt,
-                            paymentMethod: receipt.paymentMethod,
-                            items: _items(receipt.itemsJson),
-                          ),
-                      ],
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final available = constraints.maxWidth;
+
+                        // Receipt cards are wider than item cards — target ~320px
+                        const spacing = 16.0;
+                        final columns =
+                            (available / 320).floor().clamp(1, 4);
+
+                        final cardWidth =
+                            (available - (columns - 1) * spacing) / columns;
+
+                        return Wrap(
+                          spacing: spacing,
+                          runSpacing: spacing,
+                          children: [
+                            for (final receipt in receipts)
+                              SizedBox(
+                                width: cardWidth,
+                                child: ReceiptCard(
+                                  receiptNumber: receipt.receiptNumber,
+                                  total: receipt.total,
+                                  itemCount: _itemCount(receipt.itemsJson),
+                                  date: receipt.createdAt,
+                                  paymentMethod: receipt.paymentMethod,
+                                  items: _items(receipt.itemsJson),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
                 ],
               ),

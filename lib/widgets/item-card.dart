@@ -13,15 +13,13 @@ class ItemCard extends StatelessWidget {
     this.bulkDealLabel,
     this.savings,
     this.imageHeight = 120,
-    this.width = 167,
-    this.height = 260,
+    this.width,
+    this.height,
     this.color = const Color(0xFF602e9e),
     this.onViewDetails,
-    // ── Selection mode ─────────────────────────
     this.quantity,
     this.onIncrement,
     this.onDecrement,
-    // ── Ellipsis menu ──────────────────────────
     this.onEdit,
     this.onDelete,
   });
@@ -31,138 +29,138 @@ class ItemCard extends StatelessWidget {
   final String? imageUrl;
   final String? imageAsset;
   final String? imagePath;
+  final String? bulkDealLabel;
+  final double? savings;
   final double imageHeight;
-  final double width;
-  final double height;
+  final double? width;      
+  final double? height;     
   final Color color;
   final VoidCallback? onViewDetails;
   final int? quantity;
   final VoidCallback? onIncrement;
   final VoidCallback? onDecrement;
-  final String? bulkDealLabel;
-  final double? savings;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   bool get _showStepper => quantity != null;
   bool get _showMenu => !_showStepper;
+
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      height: height,
-      child: Material(
-        color: Colors.white,
+    final card = Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      elevation: 2,
+      child: InkWell(
+        onTap: _showStepper ? onIncrement : onViewDetails,
         borderRadius: BorderRadius.circular(16),
-        elevation: 2,
-        child: InkWell(
-          onTap: _showStepper ? onIncrement : onViewDetails,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Image + ellipsis overlay ───────────
-                Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: imageHeight,
-                        child: _buildImage(),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Image + ellipsis overlay ───────────
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: imageHeight,
+                      child: _buildImage(),
+                    ),
+                  ),
+                  if (_showMenu)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: _MenuButton(
+                        color: color,
+                        onViewDetails: onViewDetails,
+                        onEdit: onEdit,
+                        onDelete: onDelete,
                       ),
                     ),
+                ],
+              ),
 
-                    if (_showMenu)
-                      Positioned(
-                        top: 4,
-                        right: 4,
-                        child: _MenuButton(
-                          color: color,
-                          onViewDetails: onViewDetails,
-                          onEdit: onEdit,
-                          onDelete: onDelete,
-                        ),
+              const SizedBox(height: 12),
+
+              // ── Title ──────────────────────────────
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1a1a1a),
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+
+              // ── Price ──────────────────────────────
+              Text(
+                '₱${price.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+
+              const Spacer(),
+
+              // ── Bulk badge ─────────────────────────
+              if (bulkDealLabel != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1B8E3D).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      bulkDealLabel!,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1B8E3D),
                       ),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-
-                // ── Title ──────────────────────────────
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1a1a1a),
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
 
-                // ── Price ──────────────────────────────
-                Text(
-                  '₱${price.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+              // ── Stepper (only in selection mode) ───
+              if (_showStepper)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _QuantityStepper(
+                    quantity: quantity!,
                     color: color,
+                    onIncrement: onIncrement,
+                    onDecrement: onDecrement,
                   ),
                 ),
-
-                const Spacer(),
-
-                // 👇 bulk badge
-                if (bulkDealLabel != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1B8E3D).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        bulkDealLabel!,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1B8E3D),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // ── Stepper (only in selection mode) ───
-                if (_showStepper)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: _QuantityStepper(
-                      quantity: quantity!,
-                      color: color,
-                      onIncrement: onIncrement,
-                      onDecrement: onDecrement,
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
         ),
       ),
     );
+
+    // If neither width nor height was provided, let the parent size it.
+    if (width == null && height == null) return card;
+
+    // Otherwise, apply the explicit constraints.
+    return SizedBox(width: width, height: height, child: card);
   }
 
   Widget _buildImage() {
     if (imagePath != null && imagePath!.isNotEmpty) {
-      final exists = File(imagePath!).existsSync();
-      debugPrint('ItemCard image: $imagePath exists=$exists');
       return Image.file(
         File(imagePath!),
         fit: BoxFit.cover,
